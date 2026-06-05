@@ -1,0 +1,8 @@
+{
+  "learner": "linucb",
+  "oos_start": "2012-01-31",
+  "learned_oos_sharpe": -0.8657473792389134,
+  "equal_weight_oos_sharpe": -0.5235355269819307,
+  "mean_variance_oos_sharpe": 0.6461118787107453,
+  "learned_beats_baselines": false
+}
