@@ -25,6 +25,7 @@ fied qualitatively in ``LIMITATIONS.md``.
 from __future__ import annotations
 
 import io
+import json
 import time
 import zipfile
 from pathlib import Path
@@ -134,6 +135,17 @@ def load_prices(
     cache.mkdir(parents=True, exist_ok=True)
     start_ts, end_ts = pd.Timestamp(start), pd.Timestamp(end)
 
+    # Persistent "known unresolvable" set (delisted/renamed tickers Yahoo cannot
+    # return).  Caching these makes coverage deterministic and avoids re-retrying
+    # ~200 dead tickers on every run.  Cleared by ``force=True``.
+    missing_fp = cache / "_unresolved.json"
+    unresolved: set[str] = set()
+    if missing_fp.exists() and not force:
+        try:
+            unresolved = set(json.loads(missing_fp.read_text()))
+        except Exception:
+            unresolved = set()
+
     frames: dict[str, pd.DataFrame] = {}
     missing: list[str] = []
     for t in tickers:
@@ -145,18 +157,24 @@ def load_prices(
             ):
                 frames[t] = df
                 continue
+        if t in unresolved and not force:
+            continue
         missing.append(t)
 
     if missing:
+        newly_unresolved = set()
         for batch in _chunks(missing, batch_size):
             raw = _download_prices_batch(batch, start, end)
-            if raw.empty:
-                continue
             for t in batch:
-                sub = _extract_ticker_frame(raw, t)
+                sub = _extract_ticker_frame(raw, t) if not raw.empty else None
                 if sub is not None:
                     sub.to_parquet(cache / f"{t}.parquet")
                     frames[t] = sub
+                else:
+                    newly_unresolved.add(t)
+        if newly_unresolved:
+            unresolved |= newly_unresolved
+            missing_fp.write_text(json.dumps(sorted(unresolved)))
 
     if not frames:
         raise DataUnavailableError(
@@ -296,3 +314,54 @@ def load_ff_factors(
 def compute_returns(close: pd.DataFrame) -> pd.DataFrame:
     """Simple daily returns from an adjusted close panel (date x ticker)."""
     return close.sort_index().pct_change(fill_method=None)
+
+
+def clean_prices(
+    panels: dict[str, pd.DataFrame],
+    *,
+    max_abs_return: float = 2.0,
+    min_price: float = 0.05,
+) -> tuple[dict[str, pd.DataFrame], list[str]]:
+    """Drop tickers with corrupted adjusted-price series.
+
+    Free Yahoo Finance data for some delisted/renamed/recycled tickers is
+    corrupted: e.g. ``TIE`` shows an 8000x one-day "return" and ``CPWR`` a
+    $0.0001 adjusted close (a split-adjustment artifact).  Such series destroy a
+    cross-sectional study.  We drop a ticker if its maximum absolute daily return
+    exceeds ``max_abs_return`` (default 200%) or its minimum adjusted close is
+    below ``min_price`` (default $0.05).
+
+    These thresholds are deliberately loose so they remove only obvious data
+    errors, NOT legitimate large moves -- e.g. GameStop's real +135% close on
+    2021-01-27 (squeeze) is *kept*, while ``TIE`` is dropped.  The dropped tickers
+    are reported and counted as unusable (a residual survivorship gap; see
+    LIMITATIONS.md).
+    """
+    close = panels["Close"]
+    rets = close.pct_change(fill_method=None)
+    bad_ret = rets.abs().max(skipna=True) > max_abs_return
+    bad_price = close.min(skipna=True) < min_price
+    bad = (bad_ret | bad_price)
+    keep = [c for c in close.columns if not bool(bad.get(c, False))]
+    dropped = sorted(set(close.columns) - set(keep))
+    cleaned = {f: df[[c for c in keep if c in df.columns]] for f, df in panels.items()}
+    return cleaned, dropped
+
+
+def coverage_report(requested: list[str], panels: dict[str, pd.DataFrame]) -> dict:
+    """Report price coverage for a requested ticker list.
+
+    Tickers that Yahoo Finance cannot resolve (delisted / renamed beyond our
+    remaps) have no parquet and are absent from ``panels``; they are recorded as
+    missing.  Because missing names skew toward delisted/acquired firms, the gap
+    is itself a *residual* survivorship bias (documented in LIMITATIONS.md).
+    """
+    have = set(panels["Close"].columns) if "Close" in panels else set()
+    req = set(requested)
+    missing = sorted(req - have)
+    return {
+        "n_requested": len(req),
+        "n_usable": len(req & have),
+        "n_missing": len(missing),
+        "missing": missing,
+    }

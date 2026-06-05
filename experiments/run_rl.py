@@ -36,12 +36,12 @@ RESULTS = Path("results")
 def run(args) -> dict:
     RESULTS.mkdir(parents=True, exist_ok=True)
     ds = pipeline.prepare(
-        args.start, args.end, max_tickers=args.max_tickers,
-        standardize=args.standardize, force=args.force,
+        args.start, args.end, universe_mode=args.universe,
+        max_tickers=args.max_tickers, standardize=args.standardize, force=args.force,
     )
     cfg = bt.BacktestConfig(cost_bps=args.cost_bps, weighting=args.weighting,
                             horizon=args.horizon)
-    print(f"Universe: {len(ds.universe)} tickers | "
+    print(f"Universe [{ds.universe_mode}]: {len(ds.universe)} tickers | "
           f"{ds.returns.index.min().date()} -> {ds.returns.index.max().date()}")
 
     results = rl.run_allocators(
@@ -113,6 +113,7 @@ def run(args) -> dict:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="RL/bandit signal allocator study.")
+    p.add_argument("--universe", default="pit", choices=["pit", "snapshot"])
     p.add_argument("--start", default="2010-01-01")
     p.add_argument("--end", default="2024-12-31")
     p.add_argument("--max-tickers", type=int, default=None)

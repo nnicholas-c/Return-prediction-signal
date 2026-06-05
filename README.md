@@ -20,77 +20,91 @@ downloaded free data. Nothing is hardcoded.
 
 ## Headline results (real, reproducible)
 
-Run: **402 liquid US large/mid-caps** (current S&P 500 snapshot), daily data
+Run: **point-in-time S&P 500 membership** — 614 of 805 ever-members usable
+(191 missing/unrecoverable, see coverage note), daily data
 **2010-01-04 → 2024-12-30**, monthly rebalance, 21-day forward-return target,
 **10 bps/side** transaction costs. Selection across **12 configurations**
 (6 signals × {decile, rank}).
 
 | Metric | Value |
 |---|---|
-| Best signal (by net Sharpe) | **illiquidity** (decile) |
-| Mean IC | **+0.0153** (Newey–West t = **+1.93**, IR = +0.137) |
-| Long–short Sharpe, gross | **+0.61** |
-| Long–short Sharpe, **net of costs** | **+0.53** |
-| **Deflated Sharpe Ratio** (corrects for 12 trials) | **0.22** |
-| FF5 + momentum alpha | **+8.0%/yr** (t = **+3.60**) |
-| Avg turnover / rebalance | 0.70 |
-| Max drawdown (net) | −35.1% |
-| Baseline: equal-weight market (excess) Sharpe | +0.90 |
-| Baseline: no-skill random signal Sharpe | −0.79 |
+| Best signal (by net Sharpe) | **12–1 momentum** (decile) |
+| Mean IC | **+0.0052** (Newey–West t = **+0.37**, IR = +0.024) |
+| Long–short Sharpe, gross | **+0.07** |
+| Long–short Sharpe, **net of costs** | **+0.01** |
+| **Deflated Sharpe Ratio** (corrects for 12 trials) | **0.35** |
+| FF5 + momentum alpha | **−3.3%/yr** (t = **−1.21**) |
+| Avg turnover / rebalance | 1.06 |
+| Max drawdown (net) | −64.4% |
+| Baseline: equal-weight market (excess) Sharpe | +0.86 |
+| Baseline: no-skill random signal Sharpe | −0.70 |
 
 **How to read this honestly:**
 
-1. The best signal (an illiquidity / low-dollar-volume tilt) has a positive mean
-   IC and a positive FF5+momentum alpha (t≈3.6) on this universe.
-2. **But the deflated Sharpe is only 0.22.** After accounting for the 12
-   configurations tried, the probability that the *true* Sharpe exceeds the
-   multiple-testing benchmark (SR₀ ≈ 0.73 annualized) is ~22% — i.e. **not**
-   significant once you correct for selection.
-3. The edge is **regime-dependent**: net Sharpe is **+1.27 pre-2020** but
-   **−0.20 post-2020** (`results/robustness.csv`).
-4. Simply **owning the equal-weight market beat every long–short signal**
-   (market excess Sharpe +0.90 vs best L–S net +0.53).
-5. The "illiquidity premium" inside the S&P 500 is largely a size/liquidity tilt
-   and is **heavily contaminated by survivorship bias** (we use today's
-   constituents). See `LIMITATIONS.md`.
+1. Under point-in-time membership, **no signal survives**. The best-by-net-Sharpe
+   signal (12–1 momentum) has a net Sharpe of ≈ **0.01** and a deflated Sharpe of
+   **0.35** — well below 0.5, i.e. **not significant** after the multiple-testing
+   correction. Every long–short signal's net Sharpe is ≈ 0 or negative
+   (`results/signal_summary.csv`).
+2. Simply **owning the equal-weight market beat every long–short signal**
+   (market excess Sharpe +0.86).
+3. The headline does not depend on the daily/monthly choice (verified): the
+   deflated Sharpe is 0.35 (daily) vs 0.30 (monthly), both < 0.5.
 
-The other five classic signals (12–1 momentum, 1-month reversal, low volatility,
-idiosyncratic volatility, 52-week-high proximity) have **net Sharpes near zero or
-negative** on this survivorship-biased large-cap universe — see
-`results/signal_summary.csv`.
+### The survivorship before/after (the key result)
+
+Moving from today's S&P 500 snapshot to **point-in-time membership** removes the
+look-back bias the original study flagged — and it **erases the one signal that
+looked good**. The previously "best" signal, an illiquidity/low-dollar-volume
+tilt, was a survivorship artifact (`results/survivorship_comparison.csv`,
+`results/survivorship_comparison.png`):
+
+| illiquidity signal | Snapshot (biased) | Point-in-time | Δ |
+|---|---|---|---|
+| Mean IC | +0.0153 | **−0.0060** | −0.0213 |
+| IC Newey–West t | +1.92 | **−0.84** | −2.77 |
+| Long–short Sharpe (net) | +0.53 | **−0.21** | −0.74 |
+| FF5+momentum alpha | +8.0%/yr | **−0.7%/yr** | −8.7 pp |
+| alpha t-stat | +3.59 | **−0.33** | −3.92 |
+
+The snapshot universe even produced a strong *pre-2020* illiquidity Sharpe of
++1.27; point-in-time, the selected signal's pre-2020 Sharpe is +0.05. In other
+words, the apparent edge was almost entirely the bias. This is the expected,
+correct outcome and the central finding of the project.
 
 #### Independent verification & robustness
 
 The headline statistics are re-derived from scratch (without trusting
-`src/evaluation.py`) by `python -m experiments.verify_headline`, which confirms:
+`src/evaluation.py`) by `python -m experiments.verify_headline`, which confirms
+(under the point-in-time universe):
 
 - IC Newey–West t-stat matches a hand-rolled Bartlett-kernel HAC estimator;
 - the deflated Sharpe matches a from-scratch computation;
-- the FF5+momentum alpha matches a plain numpy least-squares fit (and carries an
-  **SMB beta ≈ +0.45**, i.e. a real small-cap tilt — the residual alpha *beyond*
-  SMB is consistent with survivorship bias, not a new factor);
+- the FF5+momentum alpha matches a plain numpy least-squares fit;
 - decile weights are exactly dollar-neutral and cost accounting reconciles to
   machine precision;
-- signals are point-in-time (identical when recomputed on truncated data);
-- the conclusion is **frequency-robust**: the deflated Sharpe is 0.22 (daily) vs
-  0.23 (monthly per-rebalance returns), and the alpha t-stat is stable across HAC
-  lag lengths (5 → 42). So "not significant after multiple testing" is not an
-  artifact of daily-return autocorrelation.
+- signals are point-in-time (identical when recomputed on truncated data), and
+  at each rebalance the portfolio only holds names that were index members
+  **as of** that date (`tests/test_universe.py`);
+- the conclusion is **frequency-robust**: deflated Sharpe 0.35 (daily) vs 0.30
+  (monthly per-rebalance returns), and the alpha t-stat is stable across HAC lag
+  lengths (5 → 42).
 
 ### RL / contextual-bandit allocator (extension)
 
-Out-of-sample net Sharpe of signal-combination methods (`results/rl_allocator_summary.csv`):
+Out-of-sample net Sharpe of signal-combination methods, point-in-time universe
+(`results/rl_allocator_summary.csv`):
 
 | Method | OOS net Sharpe |
 |---|---|
-| Mean–variance combination (point-in-time) | **+0.65** |
-| Equal-weight combination | −0.52 |
-| Learned LinUCB contextual bandit | −0.87 |
+| Learned LinUCB contextual bandit | **−0.05** |
+| Equal-weight combination | −0.23 |
+| Mean–variance combination (point-in-time) | −0.56 |
 
-**The learned allocator did NOT beat the baselines.** A simple point-in-time
-mean–variance combination of the signals was the best combiner; the contextual
-bandit, which chases recently-strong signals, underperformed (signal strength
-mean-reverts across regimes). Reported plainly, as intended.
+**All three allocators lose money out-of-sample** under point-in-time data. The
+learned LinUCB has the highest (least-negative) OOS Sharpe, but a negative Sharpe
+is not a "win" — there is simply no profitable combination of signals to find
+once the survivorship bias is removed. Reported plainly, as intended.
 
 ---
 
@@ -99,37 +113,51 @@ mean-reverts across regimes). Reported plainly, as intended.
 ```bash
 pip install -r requirements.txt
 
-# End-to-end signal study -> results/  (downloads + caches data on first run)
-python -m experiments.run_baseline --start 2010-01-01 --end 2024-12-31
+# End-to-end signal study -> results/  (default --universe pit; caches on first run)
+python -m experiments.run_baseline --universe pit
+python -m experiments.run_baseline --universe snapshot     # old survivorship-biased run
+
+# Survivorship before/after: snapshot vs point-in-time -> survivorship_comparison.{csv,png}
+python -m experiments.run_comparison
 
 # RL / contextual-bandit allocator vs baselines -> results/
-python -m experiments.run_rl --start 2010-01-01 --end 2024-12-31 --learner linucb
+python -m experiments.run_rl --universe pit --learner linucb
 
 # Independently re-derive & stress-test the headline stats (prints PASS/FAIL)
-python -m experiments.verify_headline
+python -m experiments.verify_headline --universe pit
 
-# Tests (no-look-ahead, cost accounting, CV purging, IC sign conventions)
+# Tests (no-look-ahead, cost accounting, CV purging, IC sign, PIT membership)
 pytest -q
 ```
 
-Useful flags: `--max-tickers N` (smaller/faster universe), `--cost-bps`,
-`--horizon`, `--standardize {zscore,rank}`, `--learner {linucb,thompson}`,
-`--force` (re-download). First run downloads from Yahoo Finance + the Ken French
-Data Library and caches to `data/cache/` (git-ignored); later runs are fast and
+Useful flags: `--universe {pit,snapshot}`, `--max-tickers N` (smaller/faster
+universe), `--cost-bps`, `--horizon`, `--standardize {zscore,rank}`,
+`--learner {linucb,thompson}`, `--force` (re-download). The first point-in-time
+run downloads the historical-constituents list and the wider price set (the union
+of all ever-members, ~800 tickers) from Yahoo Finance + the Ken French Data
+Library and caches to `data/cache/` (git-ignored); later runs are fast and
 offline-friendly.
 
 Outputs written to `results/`: `signal_summary.csv`, `baselines.csv`,
-`robustness.csv`, `rl_allocator_summary.csv`, `headline_*.json`, and per-signal
-equity-curve / IC figures (`equity_*.png`, `ic_*.png`, `rl_allocator_curves.png`).
+`robustness.csv`, `rl_allocator_summary.csv`, `survivorship_comparison.csv`,
+`headline_*.json`, and figures (`equity_*.png`, `ic_*.png`,
+`survivorship_comparison.png`, `rl_allocator_curves.png`).
 
 ---
 
 ## Data (free, no credentials)
 
-- **Prices:** daily adjusted OHLCV via `yfinance` (`auto_adjust=True`).
-- **Universe:** a curated snapshot of current S&P 500 constituents
-  (`src/universe.py`). **Not point-in-time** — survivorship caveat documented in
-  `LIMITATIONS.md`.
+- **Prices:** daily adjusted OHLCV via `yfinance` (`auto_adjust=True`). A
+  data-quality filter (`src/data.py: clean_prices`) drops tickers with corrupted
+  Yahoo series (e.g. an 8000× one-day "return") while keeping legitimate large
+  moves (e.g. GameStop's real +135% squeeze day).
+- **Universe (two modes):**
+  - `pit` (**default**) — **point-in-time S&P 500 membership** from the free
+    `fja05680/sp500` historical-constituents list (`src/universe_pit.py`). At
+    each rebalance date the tradable set is the constituents *as of* that date,
+    including names later removed. This is the survivorship-bias reduction.
+  - `snapshot` — today's S&P 500 list (`src/universe.py`), kept for the
+    before/after comparison. **Not point-in-time** (survivorship-biased).
 - **Factors:** Fama–French 5 factors + momentum + RF from the **Ken French Data
   Library**, downloaded as direct CSV (more robust than `pandas-datareader`
   against pandas version churn). See `src/data.py`.
@@ -185,29 +213,38 @@ equity-signal-research/
   requirements.txt
   src/
     universe.py             # S&P 500 snapshot (with survivorship caveat)
-    data.py                 # yfinance prices + Ken French factors, cached
+    universe_pit.py         # point-in-time index membership (members_asof)
+    data.py                 # yfinance prices + Ken French factors, quality filter, cached
     signals.py              # point-in-time cross-sectional signals
     cv.py                   # purged + embargoed walk-forward splits
     backtest.py             # portfolio construction, cost model, simulator
     evaluation.py           # IC, NW t-stats, deflated Sharpe, FF alpha, plots
     rl_allocator.py         # LinUCB / Thompson bandit + EW/MV baselines
-    pipeline.py             # shared data-prep used by the experiments
+    pipeline.py             # shared data-prep (snapshot/pit), membership masking
   experiments/
     run_baseline.py         # end-to-end signal study -> results/
+    run_comparison.py       # snapshot vs point-in-time survivorship comparison
     run_rl.py               # RL allocator vs baselines -> results/
+    verify_headline.py      # independent re-derivation of the headline stats
+  report/                   # short written report (markdown, + PDF if pandoc)
   results/                  # CSV tables + PNG figures (reproducible)
-  tests/                    # look-ahead, cost, CV purge, IC sign
+  tests/                    # look-ahead, cost, CV purge, IC sign, PIT membership
   data/                     # cached parquet (git-ignored)
 ```
 
-## Resume line (fill with the numbers above)
+## Resume line (uses the point-in-time numbers above)
 
-> Built a cross-sectional return-prediction study over 402 liquid US equities,
+> Built a cross-sectional return-prediction study over a **point-in-time** S&P
+> 500 universe (≈614 of 805 historical constituents, survivorship-controlled),
 > evaluated as a dollar-neutral long–short portfolio with explicit transaction
-> costs; reported out-of-sample mean IC ≈ 0.015 (Newey–West t ≈ 1.9) and a
-> **deflated** (multiple-testing-corrected) Sharpe of ≈ 0.22 — i.e. the apparent
-> edge is not significant after selection and survivorship bias. Combined
-> signals via a LinUCB contextual-bandit / mean–variance allocator and reported,
-> honestly, that the learned allocator did not beat a mean–variance baseline.
+> costs, purged/embargoed walk-forward CV, Newey–West IC t-stats and a
+> **deflated** (multiple-testing-corrected) Sharpe ratio. Found that **no signal
+> survives**: best out-of-sample mean IC ≈ 0.005 (t ≈ 0.4), net Sharpe ≈ 0,
+> deflated Sharpe ≈ 0.35 (< 0.5). Demonstrated that a prior "illiquidity alpha"
+> (+8%/yr, t ≈ 3.6 on a current-snapshot universe) was a **survivorship
+> artifact** that vanished (alpha ≈ 0, t ≈ −0.3) under point-in-time membership.
+> Added a LinUCB contextual-bandit allocator and reported honestly that no
+> signal combination is profitable out of sample once the bias is removed.
 
-See `LIMITATIONS.md` for the full list of caveats before trusting any number.
+See `report/equity_signal_research_report.md` for the full write-up and
+`LIMITATIONS.md` for the caveats before trusting any number.

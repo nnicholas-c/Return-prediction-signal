@@ -16,3 +16,6 @@ pandas-datareader>=0.10
 
 # Testing
 pytest>=7.0
+
+# Optional: best-effort Markdown->PDF for report/build_pdf.py (use pandoc if available)
+fpdf2>=2.7
