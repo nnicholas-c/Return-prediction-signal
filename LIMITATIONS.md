@@ -31,6 +31,13 @@ it **before** trusting any number in `README.md` or `results/`.
   single run*. The true number of researcher degrees of freedom (window choices,
   cost assumptions, signal definitions explored during development) is larger, so
   even 0.22 is an optimistic upper bound on significance.
+- We report the deflated Sharpe on **daily** returns, which is statistically
+  aggressive for a monthly-rebalanced strategy (daily returns inside a holding
+  month are autocorrelated, inflating the effective sample size). As a check,
+  `experiments/verify_headline.py` recomputes it on **monthly** per-rebalance
+  returns and gets essentially the same answer (0.23 vs 0.22), and the FF-alpha
+  t-stat is stable across HAC lag lengths (5–42). The null-to-weak conclusion is
+  therefore not an artifact of the return frequency.
 
 ## 3. Regime dependence
 
