@@ -59,6 +59,24 @@ idiosyncratic volatility, 52-week-high proximity) have **net Sharpes near zero o
 negative** on this survivorship-biased large-cap universe — see
 `results/signal_summary.csv`.
 
+#### Independent verification & robustness
+
+The headline statistics are re-derived from scratch (without trusting
+`src/evaluation.py`) by `python -m experiments.verify_headline`, which confirms:
+
+- IC Newey–West t-stat matches a hand-rolled Bartlett-kernel HAC estimator;
+- the deflated Sharpe matches a from-scratch computation;
+- the FF5+momentum alpha matches a plain numpy least-squares fit (and carries an
+  **SMB beta ≈ +0.45**, i.e. a real small-cap tilt — the residual alpha *beyond*
+  SMB is consistent with survivorship bias, not a new factor);
+- decile weights are exactly dollar-neutral and cost accounting reconciles to
+  machine precision;
+- signals are point-in-time (identical when recomputed on truncated data);
+- the conclusion is **frequency-robust**: the deflated Sharpe is 0.22 (daily) vs
+  0.23 (monthly per-rebalance returns), and the alpha t-stat is stable across HAC
+  lag lengths (5 → 42). So "not significant after multiple testing" is not an
+  artifact of daily-return autocorrelation.
+
 ### RL / contextual-bandit allocator (extension)
 
 Out-of-sample net Sharpe of signal-combination methods (`results/rl_allocator_summary.csv`):
@@ -86,6 +104,9 @@ python -m experiments.run_baseline --start 2010-01-01 --end 2024-12-31
 
 # RL / contextual-bandit allocator vs baselines -> results/
 python -m experiments.run_rl --start 2010-01-01 --end 2024-12-31 --learner linucb
+
+# Independently re-derive & stress-test the headline stats (prints PASS/FAIL)
+python -m experiments.verify_headline
 
 # Tests (no-look-ahead, cost accounting, CV purging, IC sign conventions)
 pytest -q
