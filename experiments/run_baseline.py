@@ -8,7 +8,8 @@ market baselines plus regime / cost robustness.
 
 Usage::
 
-    python -m experiments.run_baseline                 # full default run
+    python -m experiments.run_baseline                       # default: --universe pit
+    python -m experiments.run_baseline --universe snapshot   # old survivorship-biased run
     python -m experiments.run_baseline --max-tickers 60 --start 2012-01-01
 
 Every number printed and written to ``results/`` is computed from freshly
@@ -37,22 +38,27 @@ def _signal_daily_sr(daily: pd.Series) -> float:
     return float(r.mean() / sd) if sd > 0 else 0.0
 
 
-def run(args) -> dict:
+def run(args, *, write: bool = True) -> dict:
     RESULTS.mkdir(parents=True, exist_ok=True)
     ds = pipeline.prepare(
-        args.start, args.end, max_tickers=args.max_tickers,
-        standardize=args.standardize, force=args.force,
+        args.start, args.end, universe_mode=args.universe,
+        max_tickers=args.max_tickers, standardize=args.standardize, force=args.force,
     )
-    print(f"Universe: {len(ds.universe)} tickers | "
+    cov = ds.coverage
+    cov_str = ""
+    if cov is not None:
+        cov_str = (f" | coverage: {cov['n_usable']}/{cov['n_requested']} usable, "
+                   f"{cov['n_missing']} missing")
+    print(f"Universe [{ds.universe_mode}]: {len(ds.universe)} tradable tickers | "
           f"{ds.returns.index.min().date()} -> {ds.returns.index.max().date()} "
-          f"({len(ds.returns)} trading days)")
+          f"({len(ds.returns)} trading days){cov_str}")
 
     cfg = bt.BacktestConfig(cost_bps=args.cost_bps, weighting="decile",
                             horizon=args.horizon)
 
     per_signal_rows = []
     trial_daily_sharpes: list[float] = []
-    trial_records: list[tuple[str, str, pd.Series]] = []  # (signal, weighting, daily_net)
+    trial_records: list[tuple[str, str, pd.Series]] = []
 
     for name, panel in ds.std_signals.items():
         rebal = bt.get_rebalance_dates(ds.returns.index, cfg.rebalance_freq)
@@ -79,16 +85,16 @@ def run(args) -> dict:
             }
             per_signal_rows.append(row)
 
-            if weighting == "decile":
-                # Save figures for the decile version of each signal.
+            if weighting == "decile" and write:
                 ev.plot_equity_curve(res, str(RESULTS / f"equity_{name}.png"),
-                                     title=f"{name} long-short (decile)")
+                                     title=f"{name} long-short (decile, {ds.universe_mode})")
                 ev.plot_ic_series(ic, str(RESULTS / f"ic_{name}.png"),
                                   title=f"{name} IC (mean={ic_stats['mean_ic']:.3f}, "
                                         f"t={ic_stats['ic_tstat_nw']:.2f})")
 
     table = pd.DataFrame(per_signal_rows)
-    table.to_csv(RESULTS / "signal_summary.csv", index=False)
+    if write:
+        table.to_csv(RESULTS / "signal_summary.csv", index=False)
 
     # --- Selection + deflated Sharpe (multiple-testing correction) ---
     best_idx = int(np.nanargmax([r["sharpe_net"] for r in per_signal_rows]))
@@ -119,22 +125,26 @@ def run(args) -> dict:
         "ann_return": float("nan"),
         "ann_vol": float(np.std(rand_sharpes)),
     })
-    pd.DataFrame(baseline_rows).to_csv(RESULTS / "baselines.csv", index=False)
+    if write:
+        pd.DataFrame(baseline_rows).to_csv(RESULTS / "baselines.csv", index=False)
 
-    # --- Robustness: regime subsamples + cost sensitivity (on selected config) ---
+    # --- Robustness: regime subsamples + cost sensitivity (selected config) ---
     robustness = []
     splits = {
         "pre_2020": (ds.returns.index.min(), pd.Timestamp("2019-12-31")),
         "post_2020": (pd.Timestamp("2020-01-01"), ds.returns.index.max()),
     }
     sel_cfg = bt.BacktestConfig(cost_bps=args.cost_bps, weighting=best_weighting,
-                               horizon=args.horizon)
+                                horizon=args.horizon)
+    regime = {}
     for label, (a, b) in splits.items():
         sub = ds.returns.loc[a:b]
         if len(sub) < 60:
             continue
         rsub = bt.run_backtest(ds.std_signals[best_name].loc[a:b], sub, sel_cfg)
-        robustness.append({"slice": label, "sharpe_net": ev.sharpe_ratio(rsub.daily_net),
+        sr = ev.sharpe_ratio(rsub.daily_net)
+        regime[label] = sr
+        robustness.append({"slice": label, "sharpe_net": sr,
                            "n_days": len(rsub.daily_net.dropna())})
     for bps in args.cost_grid:
         rc = bt.run_backtest(ds.std_signals[best_name], ds.returns,
@@ -142,9 +152,11 @@ def run(args) -> dict:
                                                horizon=args.horizon))
         robustness.append({"slice": f"cost_{bps}bps", "sharpe_net": ev.sharpe_ratio(rc.daily_net),
                            "n_days": len(rc.daily_net.dropna())})
-    pd.DataFrame(robustness).to_csv(RESULTS / "robustness.csv", index=False)
+    if write:
+        pd.DataFrame(robustness).to_csv(RESULTS / "robustness.csv", index=False)
 
     headline = {
+        "universe_mode": ds.universe_mode,
         "universe_size": len(ds.universe),
         "period": f"{ds.returns.index.min().date()}..{ds.returns.index.max().date()}",
         "cost_bps_per_side": args.cost_bps,
@@ -162,21 +174,32 @@ def run(args) -> dict:
         "alpha_tstat": best["alpha_tstat"],
         "avg_turnover": best["avg_turnover"],
         "max_drawdown_net": best["max_drawdown_net"],
+        "sharpe_net_pre2020": regime.get("pre_2020", float("nan")),
+        "sharpe_net_post2020": regime.get("post_2020", float("nan")),
         "market_excess_sharpe": baseline_rows[0]["sharpe"],
         "random_signal_mean_sharpe": baseline_rows[1]["sharpe"],
     }
-    with open(RESULTS / "headline_baseline.json", "w") as f:
-        json.dump(headline, f, indent=2)
-
-    _print_headline(headline, table)
-    return headline
+    if cov is not None:
+        headline.update({
+            "coverage_n_requested": cov["n_requested"],
+            "coverage_n_usable": cov["n_usable"],
+            "coverage_n_missing": cov["n_missing"],
+        })
+    if write:
+        with open(RESULTS / "headline_baseline.json", "w") as f:
+            json.dump(headline, f, indent=2)
+        _print_headline(headline, table)
+    return {"headline": headline, "table": table, "coverage": cov}
 
 
 def _print_headline(h: dict, table: pd.DataFrame) -> None:
     print("\n" + "=" * 70)
-    print("BASELINE STUDY — HEADLINE METRICS (real, reproducible)")
+    print(f"BASELINE STUDY — HEADLINE METRICS [{h['universe_mode']}] (real, reproducible)")
     print("=" * 70)
     print(f"Universe / period : {h['universe_size']} stocks, {h['period']}")
+    if "coverage_n_requested" in h:
+        print(f"Price coverage    : {h['coverage_n_usable']}/{h['coverage_n_requested']} "
+              f"ever-members usable ({h['coverage_n_missing']} missing/unrecoverable)")
     print(f"Transaction cost  : {h['cost_bps_per_side']} bps/side")
     print(f"Configs tried     : {h['n_trials']} (signals x weightings)")
     print(f"Selected (best net Sharpe): {h['selected_signal']} [{h['selected_weighting']}]")
@@ -189,6 +212,8 @@ def _print_headline(h: dict, table: pd.DataFrame) -> None:
           f"(prob. true SR > multiple-testing benchmark "
           f"SR0_annual={h['sr0_annual_benchmark']:.2f})")
     print(f"FF5+Mom alpha     : {h['alpha_annual']:+.3%}/yr  (t = {h['alpha_tstat']:+.2f})")
+    print(f"Regime (net Sharpe): pre-2020 {h['sharpe_net_pre2020']:+.2f} | "
+          f"post-2020 {h['sharpe_net_post2020']:+.2f}")
     print(f"Avg turnover/rebal: {h['avg_turnover']:.2f}   Max DD (net): {h['max_drawdown_net']:.1%}")
     print("-" * 70)
     print(f"Baseline market (excess) Sharpe : {h['market_excess_sharpe']:+.3f}")
@@ -204,6 +229,8 @@ def _print_headline(h: dict, table: pd.DataFrame) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Cross-sectional signal study.")
+    p.add_argument("--universe", default="pit", choices=["pit", "snapshot"],
+                   help="point-in-time membership (default) or current snapshot")
     p.add_argument("--start", default="2010-01-01")
     p.add_argument("--end", default="2024-12-31")
     p.add_argument("--max-tickers", type=int, default=None)

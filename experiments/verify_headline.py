@@ -50,8 +50,11 @@ def _bartlett_nw_tstat(x: np.ndarray) -> tuple[float, int]:
     return float(x.mean() / se), L
 
 
-def main() -> None:
-    ds = pipeline.prepare("2010-01-01", "2024-12-31")
+def main(universe: str = "pit") -> None:
+    ds = pipeline.prepare("2010-01-01", "2024-12-31", universe_mode=universe)
+    print(f"Universe mode: {ds.universe_mode}  ({len(ds.universe)} tradable tickers)"
+          + (f"  coverage {ds.coverage['n_usable']}/{ds.coverage['n_requested']}"
+             if ds.coverage else ""))
     cfg = bt.BacktestConfig(cost_bps=10.0, weighting="decile", horizon=21)
     rd = bt.get_rebalance_dates(ds.returns.index, cfg.rebalance_freq)
     fwd = bt.forward_returns(ds.returns, rd, cfg.horizon)
@@ -159,4 +162,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    ap = argparse.ArgumentParser(description="Independently verify headline stats.")
+    ap.add_argument("--universe", default="pit", choices=["pit", "snapshot"])
+    main(ap.parse_args().universe)
