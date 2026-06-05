@@ -1,0 +1,23 @@
+# Raw downloads / caches (reproducible from code; not version-controlled)
+data/raw/
+data/cache/
+*.parquet
+*.zip
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+.venv/
+venv/
+env/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Allow committed example results, but ignore scratch
+results/_scratch/
