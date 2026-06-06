@@ -18,36 +18,56 @@ allocator is included as an RL extension.
 
 ---
 
-## Why this is worth a reviewer's time
+## About this project
 
-This repo is designed to be *read* by someone trained to spot look-ahead bias,
-leakage, and backtest overfitting. It demonstrates the full evaluation toolkit a
-quant researcher uses, and — more importantly — the discipline to **report a null
-result honestly** instead of overfitting to a number.
+I started this project to understand how quant researchers actually decide
+whether a trading signal is real, rather than just whether it looks good in a
+backtest. I took six classic price/volume signals (momentum, reversal, low
+volatility, idiosyncratic volatility, 52-week-high proximity, and an illiquidity
+proxy), turned each into a dollar-neutral long–short portfolio, and tried to
+evaluate them as honestly as I could.
 
-**Methods implemented (all from first principles):**
+The most useful thing I learned came from a mistake I almost made. On a universe
+of *today's* S&P 500 members, the illiquidity signal looked genuinely good — a
++8%/yr factor alpha with a t-stat around 3.6. It would have been easy to write
+that down as a finding. But that universe only contains companies that survived
+and stayed in the index, so I rebuilt the whole study on **point-in-time index
+membership** (the constituents as they actually were on each date, including the
+ones that were later dropped or delisted). The alpha disappeared — it dropped to
+roughly −0.7%/yr with a t-stat near zero. The "edge" was survivorship bias, not
+skill. That single before/after comparison taught me more about backtesting than
+any positive result would have.
 
-- **Point-in-time universe construction** — index membership *as of* each
-  rebalance date from a dated historical-constituents source, so the backtest
-  never trades a name before it joined or after it left the index.
-- **Strict point-in-time features & labels** — backward-looking signals only;
-  weights applied with a one-day lag (a weight set at *t* cannot earn *t*'s
-  return); membership masking applied **before** cross-sectional standardization.
-- **Purged + embargoed walk-forward CV** (López de Prado) — no train/test leakage
-  across the label horizon.
-- **Dollar-neutral long–short backtester** with a configurable transaction-cost
-  model (bps/side × turnover), reported **gross and net**.
-- **Information Coefficient with Newey–West (HAC) t-stats** and information ratio.
-- **Deflated Sharpe Ratio** (López de Prado) — corrects the Sharpe for the number
-  of configurations tried (multiple-testing honesty).
-- **Factor-neutral alpha** — regression on Fama–French 5 factors + momentum (HAC
-  errors), to test for anything beyond known factors.
-- **Baselines** — equal-weight market, a no-skill random signal, single factors.
-- **RL extension** — LinUCB / Thompson-sampling contextual bandit for signal
-  allocation, trained online walk-forward with the same no-leakage discipline.
-- **Reproducibility & rigor** — 50 unit tests (look-ahead, cost accounting, CV
-  purging, IC sign, membership), plus an independent re-derivation script that
-  reconstructs every headline statistic without trusting the library code.
+The other lesson was about being honest with statistics. Because I tried twelve
+configurations and picked the best one, I learned to discount the Sharpe with a
+**deflated Sharpe ratio** that accounts for how many things I tried — and once I
+did, nothing was significant. So the final result is a clean null: after
+transaction costs, multiple-testing correction, and survivorship control, none of
+these simple signals earns a credible return. I think being able to reach and
+report that conclusion is the actual skill here.
+
+Along the way I implemented, mostly from first principles, the pieces a quant
+researcher would expect to see:
+
+- a **point-in-time universe** layer so the backtest never trades a name before
+  it joined or after it left the index;
+- **strict point-in-time features and labels** — backward-looking signals only,
+  weights lagged one day so a weight set at *t* can't earn *t*'s return, and
+  membership masking applied *before* cross-sectional standardization;
+- **purged + embargoed walk-forward cross-validation** (López de Prado) to avoid
+  train/test leakage across the label horizon;
+- a **dollar-neutral long–short backtester** with a transaction-cost model
+  (bps/side × turnover), reported gross *and* net;
+- **Information Coefficients with Newey–West (HAC) t-stats**, a **deflated Sharpe
+  ratio**, and **factor-neutral alpha** against Fama–French 5 factors + momentum;
+- sensible **baselines** (equal-weight market, a no-skill random signal); and
+- an **RL extension** — a LinUCB / Thompson-sampling contextual bandit that tries
+  to allocate across the signals, trained walk-forward with the same no-leakage
+  discipline (it didn't beat the simple baselines, and I say so).
+
+To keep myself honest I wrote 50 unit tests (look-ahead, cost accounting, CV
+purging, IC sign conventions, membership) and a separate script that re-derives
+every headline number from scratch without trusting my own library code.
 
 **Stack:** Python · NumPy · pandas · SciPy · scikit-learn · statsmodels ·
 matplotlib · yfinance · Ken French Data Library.
