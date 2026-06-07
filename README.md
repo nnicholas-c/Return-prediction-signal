@@ -1,5 +1,8 @@
 # equity-signal-research
 
+**Project site:** https://nnicholas-c.github.io/Return-prediction-signal/ ·
+**Report:** [`report/equity_signal_research_report.md`](report/equity_signal_research_report.md)
+
 **A cross-sectional equity signal-research study built to quant-research review
 standards — and an honest null result.** Six well-documented price/volume signals
 are turned into dollar-neutral long–short portfolios and evaluated on a

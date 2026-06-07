@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cross-Sectional Equity Signal Research — Nicholas Chen</title>
+<meta name="description" content="A quant-research study of cross-sectional equity signals: point-in-time backtesting, deflated Sharpe, factor-neutral alpha, and an honest null result." />
+<style>
+  :root{
+    --bg:#0f1420; --panel:#fff; --ink:#1a2233; --muted:#5b6678;
+    --line:#e6e9f0; --accent:#2f6df0; --accent2:#0fa36b; --danger:#d6455a;
+    --chip:#eef2fb;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       color:var(--ink);background:#f6f8fc;line-height:1.6;-webkit-font-smoothing:antialiased}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:920px;margin:0 auto;padding:0 22px}
+  code,.mono{font-family:"SF Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.92em}
+
+  /* Hero */
+  header{background:linear-gradient(160deg,#0f1420,#1b2740 60%,#243556);color:#eaf0fb;padding:64px 0 52px}
+  header .tag{display:inline-block;font-size:.8rem;letter-spacing:.12em;text-transform:uppercase;
+              color:#9fb4dd;border:1px solid #33425f;border-radius:999px;padding:5px 12px;margin-bottom:18px}
+  header h1{font-size:2.2rem;line-height:1.2;margin:.1em 0 .35em;font-weight:700}
+  header p.lede{font-size:1.12rem;color:#c7d3ea;max-width:760px;margin:0 0 18px}
+  .punch{background:rgba(214,69,90,.12);border-left:3px solid var(--danger);border-radius:8px;
+         padding:14px 18px;margin:22px 0 0;color:#f1d7dc;font-size:1rem;max-width:780px}
+  .punch b{color:#fff}
+  .btns{margin-top:26px;display:flex;flex-wrap:wrap;gap:12px}
+  .btn{display:inline-block;padding:11px 18px;border-radius:9px;font-weight:600;font-size:.95rem}
+  .btn.primary{background:var(--accent);color:#fff}
+  .btn.ghost{background:transparent;color:#cdd9f0;border:1px solid #3a4a6a}
+  .btn:hover{text-decoration:none;filter:brightness(1.07)}
+
+  /* Sections */
+  main{padding:10px 0 60px}
+  section{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+          padding:30px 32px;margin:26px 0;box-shadow:0 1px 2px rgba(20,30,60,.04)}
+  section h2{font-size:1.4rem;margin:0 0 6px}
+  section .sub{color:var(--muted);margin:0 0 20px;font-size:.96rem}
+  h3{font-size:1.08rem;margin:26px 0 8px}
+  p{margin:0 0 14px}
+
+  /* Metric cards */
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin:6px 0 4px}
+  .card{border:1px solid var(--line);border-radius:11px;padding:14px 16px;background:#fbfcfe}
+  .card .k{font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .card .v{font-size:1.5rem;font-weight:700;margin-top:3px}
+  .card .v.bad{color:var(--danger)} .card .v.ok{color:var(--accent2)}
+  .card .n{font-size:.82rem;color:var(--muted);margin-top:2px}
+
+  /* Tables */
+  .tbl{width:100%;border-collapse:collapse;margin:8px 0 6px;font-size:.95rem}
+  .tbl th,.tbl td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line)}
+  .tbl th{font-size:.78rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600}
+  .tbl td.num{font-variant-numeric:tabular-nums;text-align:right}
+  .tbl tr:last-child td{border-bottom:none}
+  .pos{color:var(--accent2);font-weight:600} .neg{color:var(--danger);font-weight:600}
+  .note{font-size:.86rem;color:var(--muted);margin-top:10px}
+
+  figure{margin:18px 0 4px}
+  figure img{width:100%;border:1px solid var(--line);border-radius:10px;display:block}
+  figcaption{font-size:.85rem;color:var(--muted);margin-top:8px;text-align:center}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media(max-width:640px){.two{grid-template-columns:1fr}header h1{font-size:1.7rem}}
+
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+  .chip{background:var(--chip);border:1px solid #dde5f6;color:#33446b;border-radius:999px;
+        padding:6px 12px;font-size:.85rem;font-weight:500}
+  pre{background:#0f1420;color:#e7eefc;border-radius:10px;padding:16px 18px;overflow:auto;font-size:.86rem;margin:8px 0}
+  pre .c{color:#7e8aa6}
+  ul.clean{margin:6px 0 14px;padding-left:20px} ul.clean li{margin:5px 0}
+  footer{color:var(--muted);font-size:.88rem;text-align:center;padding:26px 0 50px}
+  footer a{color:var(--accent)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <span class="tag">Quantitative Research · Personal Project</span>
+    <h1>Cross-Sectional Equity Signal Research</h1>
+    <p class="lede">A study of whether classic price/volume signals predict the cross-section of
+      US equity returns — evaluated the way a quant researcher would: point-in-time data,
+      transaction costs, purged/embargoed cross-validation, Newey–West IC t-stats,
+      factor-neutral alpha, and a multiple-testing-corrected deflated Sharpe ratio.</p>
+    <div class="punch">
+      <b>The headline isn't a Sharpe — it's judgment.</b> On a current-snapshot universe one
+      signal showed a <b>+8.0%/yr factor alpha (t ≈ 3.6)</b>. Rebuilt on <b>point-in-time index
+      membership</b>, that alpha collapses to <b>−0.7%/yr (t ≈ −0.3)</b> — it was survivorship
+      bias, not skill. After costs, multiple testing, and survivorship control, no signal survives.
+    </div>
+    <div class="btns">
+      <a class="btn primary" href="https://github.com/nnicholas-c/Return-prediction-signal">View code on GitHub</a>
+      <a class="btn ghost" href="equity_signal_research_report.pdf">Read the report (PDF)</a>
+      <a class="btn ghost" href="#results">Jump to results</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section id="about">
+    <h2>About this project</h2>
+    <p class="sub">What I built, and what I learned from it.</p>
+    <p>I started this project to understand how quant researchers actually decide whether a trading
+      signal is <em>real</em>, rather than whether it merely looks good in a backtest. I took six
+      classic signals — 12–1 momentum, short-term reversal, low volatility, idiosyncratic volatility,
+      52-week-high proximity, and an illiquidity proxy — turned each into a dollar-neutral long–short
+      portfolio, and tried to evaluate them as honestly as I could.</p>
+    <p>The most useful thing I learned came from a mistake I almost made. On a universe of
+      <em>today's</em> S&amp;P 500 members, the illiquidity signal looked genuinely good — a +8%/yr
+      factor alpha with a t-stat around 3.6. It would have been easy to write that down as a finding.
+      But that universe only contains companies that survived and stayed in the index, so I rebuilt the
+      whole study on <strong>point-in-time index membership</strong> (the constituents as they actually
+      were on each date, including the ones later dropped or delisted). The alpha disappeared. The
+      "edge" was survivorship bias. That one before/after comparison taught me more about backtesting
+      than any positive result would have.</p>
+    <p>The second lesson was statistical honesty: because I tried twelve configurations and picked the
+      best, I learned to discount the Sharpe with a <strong>deflated Sharpe ratio</strong> that accounts
+      for how many things I tried — and once I did, nothing was significant. So the final result is a
+      clean null: after transaction costs, multiple-testing correction, and survivorship control, none
+      of these simple signals earns a credible return. Being able to reach and report that conclusion
+      is, I think, the actual skill.</p>
+    <h3>Methods &amp; stack</h3>
+    <div class="chips">
+      <span class="chip">Point-in-time universe</span>
+      <span class="chip">Purged + embargoed walk-forward CV</span>
+      <span class="chip">Newey–West (HAC) IC t-stats</span>
+      <span class="chip">Deflated Sharpe ratio</span>
+      <span class="chip">Fama–French 5 + momentum alpha</span>
+      <span class="chip">Transaction-cost backtest</span>
+      <span class="chip">LinUCB / Thompson bandit</span>
+      <span class="chip">50 unit tests + independent re-derivation</span>
+    </div>
+    <div class="chips" style="margin-top:10px">
+      <span class="chip">Python</span><span class="chip">NumPy</span><span class="chip">pandas</span>
+      <span class="chip">SciPy</span><span class="chip">statsmodels</span><span class="chip">scikit-learn</span>
+      <span class="chip">matplotlib</span><span class="chip">yfinance</span><span class="chip">Ken French Data Library</span>
+    </div>
+  </section>
+
+  <section id="results">
+    <h2>Headline results</h2>
+    <p class="sub">Point-in-time S&amp;P 500 · 614 of 805 ever-members usable · 2010–2024 · monthly
+      rebalance · 10 bps/side · selection across 12 configurations.</p>
+    <div class="cards">
+      <div class="card"><div class="k">Best signal</div><div class="v">12–1 mom.</div><div class="n">decile, dollar-neutral</div></div>
+      <div class="card"><div class="k">Mean IC</div><div class="v">+0.005</div><div class="n">Newey–West t = +0.37</div></div>
+      <div class="card"><div class="k">Net Sharpe</div><div class="v">+0.01</div><div class="n">gross +0.07</div></div>
+      <div class="card"><div class="k">Deflated Sharpe</div><div class="v bad">0.35</div><div class="n">&lt; 0.5 → not significant</div></div>
+      <div class="card"><div class="k">FF5+mom alpha</div><div class="v bad">−3.3%/yr</div><div class="n">t = −1.21</div></div>
+      <div class="card"><div class="k">Market baseline</div><div class="v ok">+0.86</div><div class="n">excess Sharpe (beats all)</div></div>
+    </div>
+    <p class="note">Every signal's net Sharpe is ≈ 0 or negative; the deflated Sharpe (which corrects
+      for trying 12 configurations) is below 0.5, i.e. worse than a coin flip that the true Sharpe beats
+      the multiple-testing benchmark; and simply holding the market beat every long–short. The
+      conclusion is frequency-robust (deflated Sharpe 0.35 daily vs 0.30 monthly).</p>
+  </section>
+
+  <section id="survivorship">
+    <h2>The survivorship before/after — the centerpiece</h2>
+    <p class="sub">Same methodology, only the universe changes: today's snapshot → point-in-time
+      membership. The signal that looked best was a survivorship artifact.</p>
+    <table class="tbl">
+      <thead><tr><th>illiquidity signal</th><th class="num">Snapshot (biased)</th><th class="num">Point-in-time</th><th class="num">Δ</th></tr></thead>
+      <tbody>
+        <tr><td>Mean IC</td><td class="num pos">+0.0153</td><td class="num neg">−0.0060</td><td class="num">−0.0213</td></tr>
+        <tr><td>IC Newey–West t</td><td class="num pos">+1.92</td><td class="num neg">−0.84</td><td class="num">−2.77</td></tr>
+        <tr><td>Long–short Sharpe (net)</td><td class="num pos">+0.53</td><td class="num neg">−0.21</td><td class="num">−0.74</td></tr>
+        <tr><td>FF5 + momentum alpha</td><td class="num pos">+8.0%/yr</td><td class="num neg">−0.7%/yr</td><td class="num">−8.7 pp</td></tr>
+        <tr><td>alpha t-stat</td><td class="num pos">+3.59</td><td class="num neg">−0.33</td><td class="num">−3.92</td></tr>
+      </tbody>
+    </table>
+    <p class="note">The snapshot even manufactured a +1.27 <em>pre-2020</em> illiquidity Sharpe;
+      point-in-time, the selected signal's pre-2020 Sharpe is +0.05. The "edge" was the bias.</p>
+    <figure>
+      <img src="assets/survivorship_comparison.png" alt="Snapshot vs point-in-time comparison of the illiquidity signal" />
+      <figcaption>Snapshot vs point-in-time: levels (left) and t-stats (right) for the illiquidity signal.</figcaption>
+    </figure>
+  </section>
+
+  <section id="figures">
+    <h2>Best point-in-time signal</h2>
+    <p class="sub">12–1 momentum, dollar-neutral long–short, net of 10 bps/side costs — essentially flat.</p>
+    <div class="two">
+      <figure>
+        <img src="assets/equity_mom_12_1.png" alt="Momentum long-short equity curve" />
+        <figcaption>Long–short equity curve (gross vs net).</figcaption>
+      </figure>
+      <figure>
+        <img src="assets/ic_mom_12_1.png" alt="Momentum information coefficient over time" />
+        <figcaption>Information coefficient over time (mean ≈ 0.005).</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section id="rl">
+    <h2>RL extension: contextual-bandit allocator</h2>
+    <p class="sub">A LinUCB / Thompson-sampling bandit learns to allocate across the signals,
+      trained walk-forward with the same no-leakage discipline.</p>
+    <table class="tbl">
+      <thead><tr><th>Method</th><th class="num">Out-of-sample net Sharpe</th></tr></thead>
+      <tbody>
+        <tr><td>Learned LinUCB contextual bandit</td><td class="num neg">−0.05</td></tr>
+        <tr><td>Equal-weight combination</td><td class="num neg">−0.23</td></tr>
+        <tr><td>Mean–variance combination (point-in-time)</td><td class="num neg">−0.56</td></tr>
+      </tbody>
+    </table>
+    <p class="note">All three allocators lose money out-of-sample. The learned bandit is the
+      least-negative, but a negative Sharpe is not a win — there's no profitable combination to find
+      once the bias is removed.</p>
+    <figure>
+      <img src="assets/rl_allocator_curves.png" alt="Out-of-sample allocator equity curves" />
+      <figcaption>Out-of-sample growth of $1 for each allocation method (net of costs).</figcaption>
+    </figure>
+  </section>
+
+  <section id="reproduce">
+    <h2>Reproduce it</h2>
+    <p class="sub">Every number above comes from a command on freely downloaded data — nothing is hardcoded.</p>
+<pre><span class="c"># install</span>
+pip install -r requirements.txt
+
+<span class="c"># headline study (point-in-time) and the old survivorship-biased run</span>
+python -m experiments.run_baseline --universe pit
+python -m experiments.run_baseline --universe snapshot
+
+<span class="c"># survivorship before/after, RL allocator, and an independent re-derivation</span>
+python -m experiments.run_comparison
+python -m experiments.run_rl --universe pit --learner linucb
+python -m experiments.verify_headline --universe pit
+
+<span class="c"># rigor tests (look-ahead, costs, CV purge, IC sign, point-in-time membership)</span>
+pytest -q</pre>
+    <ul class="clean">
+      <li><a href="https://github.com/nnicholas-c/Return-prediction-signal">Source code &amp; full README</a></li>
+      <li><a href="equity_signal_research_report.pdf">Written report (PDF)</a></li>
+    </ul>
+  </section>
+
+</main>
+
+<footer class="wrap">
+  Built by Nicholas Chen · An intentionally honest <strong>null result</strong>: the value is the
+  evaluation discipline, not a backtest Sharpe. See <a href="https://github.com/nnicholas-c/Return-prediction-signal/blob/main/LIMITATIONS.md">LIMITATIONS.md</a>
+  for residual survivorship from the price-coverage gap and other caveats.
+</footer>
+
+</body>
+</html>
